@@ -933,6 +933,111 @@ yyjson_api yyjson_doc *yyjson_read_opts(char *dat,
                                         yyjson_read_err *err);
 
 /**
+ The JSON text category accepted by yyjson_read_pg_text_type().
+
+ This helper validates PostgreSQL's syntax-only json text rules. It is separate
+ from yyjson_read_opts() and does not change yyjson's standard JSON parser.
+ */
+typedef enum yyjson_pg_text_type {
+    YYJSON_PG_TEXT_INVALID = 0,
+    YYJSON_PG_TEXT_OBJECT = 1,
+    YYJSON_PG_TEXT_ARRAY = 2,
+    YYJSON_PG_TEXT_SCALAR = 3
+} yyjson_pg_text_type;
+
+/**
+ Callback used by yyjson_read_pg_text_type_opts_err_ex() to validate a decoded
+ Unicode escape code point. Return true if the code point is acceptable.
+ */
+typedef bool (*yyjson_pg_text_unicode_validator)(void *ctx, uint32_t codepoint);
+
+/**
+ Validate PostgreSQL json text syntax and return the root item category.
+
+ PostgreSQL's json type checks escape syntax without requiring Unicode escapes
+ to form valid scalar values. For example, a lone surrogate escape is accepted
+ by PostgreSQL json input but rejected by yyjson_read_opts(). This function
+ recognizes that PostgreSQL syntax while returning YYJSON_PG_TEXT_INVALID for
+ malformed JSON. It does not allocate, mutate input, or report errors.
+
+ @param dat The JSON text data, null-terminator is not required.
+ @param len The length of JSON text data in bytes.
+ @return The root item category, or YYJSON_PG_TEXT_INVALID if invalid.
+ */
+yyjson_api yyjson_pg_text_type yyjson_read_pg_text_type(const char *dat,
+                                                        size_t len);
+
+/**
+ Validate PostgreSQL json text syntax and optionally enforce unique object keys.
+
+ When `check_unique_keys` is true, object keys are compared after JSON string
+ escape decoding, and every object in the document must have unique keys. This
+ mode follows PostgreSQL's unique-key validation semantics, including rejection
+ of invalid Unicode escape sequences during string decoding. This function is
+ separate from yyjson_read_opts() and does not change yyjson's standard parser.
+
+ @param dat The JSON text data, null-terminator is not required.
+ @param len The length of JSON text data in bytes.
+ @param check_unique_keys Whether to reject duplicate keys within each object.
+ @return The root item category, or YYJSON_PG_TEXT_INVALID if invalid.
+ */
+yyjson_api yyjson_pg_text_type yyjson_read_pg_text_type_opts(const char *dat,
+                                                             size_t len,
+                                                             bool check_unique_keys);
+
+/**
+ Validate PostgreSQL json text syntax with allocator and error reporting.
+
+ This is the error-reporting form of yyjson_read_pg_text_type_opts(). When
+ `check_unique_keys` is true, temporary memory may be allocated with `alc`.
+ Allocation failures are reported with YYJSON_READ_ERROR_MEMORY_ALLOCATION.
+
+ @param dat The JSON text data, null-terminator is not required.
+ @param len The length of JSON text data in bytes.
+ @param check_unique_keys Whether to reject duplicate keys within each object.
+ @param alc The memory allocator used for temporary validation state.
+    Pass NULL to use the libc's default allocator. If non-NULL, malloc,
+    realloc, and free callbacks must all be set.
+ @param err A pointer to receive error information.
+    Pass NULL if you don't need error information.
+ @return The root item category, or YYJSON_PG_TEXT_INVALID if invalid.
+ */
+yyjson_api yyjson_pg_text_type yyjson_read_pg_text_type_opts_err(const char *dat,
+                                                                 size_t len,
+                                                                 bool check_unique_keys,
+                                                                 const yyjson_alc *alc,
+                                                                 yyjson_read_err *err);
+
+/**
+ Validate PostgreSQL json text syntax with optional Unicode-escape validation.
+
+ This extends yyjson_read_pg_text_type_opts_err() for PostgreSQL integrations
+ that need to validate decoded Unicode escapes against a database encoding. The
+ validator is called only for `\uXXXX` escapes after surrogate-pair decoding.
+ Raw non-escaped bytes are not passed to the validator.
+
+ @param dat The JSON text data, null-terminator is not required.
+ @param len The length of JSON text data in bytes.
+ @param check_unique_keys Whether to reject duplicate keys within each object.
+ @param validate_unicode Optional callback for decoded Unicode escape codepoints.
+ @param validate_ctx User context passed to validate_unicode.
+ @param alc The memory allocator used for temporary validation state.
+    Pass NULL to use the libc's default allocator. If non-NULL, malloc,
+    realloc, and free callbacks must all be set.
+ @param err A pointer to receive error information.
+    Pass NULL if you don't need error information.
+ @return The root item category, or YYJSON_PG_TEXT_INVALID if invalid.
+ */
+yyjson_api yyjson_pg_text_type yyjson_read_pg_text_type_opts_err_ex(
+    const char *dat,
+    size_t len,
+    bool check_unique_keys,
+    yyjson_pg_text_unicode_validator validate_unicode,
+    void *validate_ctx,
+    const yyjson_alc *alc,
+    yyjson_read_err *err);
+
+/**
  Read a JSON file.
 
  This function is thread-safe when:
